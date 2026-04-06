@@ -11,8 +11,14 @@ config_version=5
 [application]
 
 config/name="InKing"
+run/main_scene="res://scenes/Lobby.tscn"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameState="*res://scripts/autoloads/GameState.gd"
+Network="*res://scripts/autoloads/Network.gd"
 
 [physics]
 
