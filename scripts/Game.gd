@@ -12,7 +12,6 @@ func _ready() -> void:
 	Network.player_disconnected.connect(_on_peer_disconnected)
 
 	if Network.is_host:
-		# Give client time to load the scene before syncing state
 		await get_tree().create_timer(0.5).timeout
 		sync_initial_state.rpc(
 			GameState.serialize_board(),
@@ -24,8 +23,8 @@ func _ready() -> void:
 	GameState.turn_changed.emit(GameState.current_turn)
 
 
-# Called by Grid.gd when the local player picks origin + direction
-func on_local_move(origin: Vector2i, direction: Vector2i) -> void:
+# Called by Grid.gd when the local player releases a drag
+func on_local_move(origin: Vector2i, direction: Vector2, shoot_range: int) -> void:
 	var player_id := GameState.current_turn
 	if GameState.get_tile(origin.x, origin.y) != player_id:
 		return
@@ -33,31 +32,27 @@ func on_local_move(origin: Vector2i, direction: Vector2i) -> void:
 	var is_networked := multiplayer.multiplayer_peer != null and Network.local_player_id != 0
 
 	if not is_networked:
-		# Hot-seat: apply directly
-		GameState.apply_move(origin, direction, player_id)
+		GameState.apply_move(origin, direction, shoot_range, player_id)
 	elif Network.is_host:
-		# Host: apply locally then broadcast to client
-		GameState.apply_move(origin, direction, player_id)
+		GameState.apply_move(origin, direction, shoot_range, player_id)
 		apply_move_rpc.rpc(
 			GameState.serialize_board(),
 			GameState.current_turn,
 			GameState.turn_number
 		)
 	else:
-		# Client: ask host to validate and apply
-		request_move.rpc_id(1, origin, direction)
+		request_move.rpc_id(1, origin, direction, shoot_range)
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func request_move(origin: Vector2i, direction: Vector2i) -> void:
+func request_move(origin: Vector2i, direction: Vector2, shoot_range: int) -> void:
 	if not Network.is_host:
 		return
-	# Client is always P2
 	if GameState.current_turn != 2:
 		return
 	if GameState.get_tile(origin.x, origin.y) != 2:
 		return
-	GameState.apply_move(origin, direction, 2)
+	GameState.apply_move(origin, direction, shoot_range, 2)
 	apply_move_rpc.rpc(
 		GameState.serialize_board(),
 		GameState.current_turn,
@@ -67,7 +62,6 @@ func request_move(origin: Vector2i, direction: Vector2i) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func apply_move_rpc(board_bytes: PackedByteArray, next_turn: int, turn_num: int) -> void:
-	# Runs on client only — sync state from host
 	GameState.deserialize_board(board_bytes)
 	GameState.current_turn = next_turn
 	GameState.turn_number = turn_num

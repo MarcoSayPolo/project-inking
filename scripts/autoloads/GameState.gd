@@ -1,18 +1,14 @@
 extends Node
 
-const GRID_SIZE: int = 20
-const SHOOT_RANGE: int = 5
-const MAX_TURNS: int = 60  # 30 per player
+const GRID_SIZE: int = 60
+const MAX_SHOOT_RANGE: int = 30
+const MAX_TURNS: int = 120  # 60 per player
 
 var board: Array = []
 var current_turn: int = 1  # 1 or 2
 var turn_number: int = 0
 var scores: Dictionary = {1: 0, 2: 0}
 var game_over: bool = false
-
-# Local input state (not synced over network)
-var selected_origin: Vector2i = Vector2i(-1, -1)
-var input_phase: int = 0  # 0 = select origin, 1 = select direction
 
 signal board_changed
 signal turn_changed(player_id: int)
@@ -31,14 +27,13 @@ func reset() -> void:
 	turn_number = 0
 	scores = {1: 0, 2: 0}
 	game_over = false
-	selected_origin = Vector2i(-1, -1)
-	input_phase = 0
 
-	# Place starting tiles
 	@warning_ignore("integer_division")
 	var mid: int = GRID_SIZE / 2
-	set_tile(0, mid, 1)
-	set_tile(GRID_SIZE - 1, mid, 2)
+	# Give each player a 3-tile vertical cluster away from the edges
+	for dy in [-1, 0, 1]:
+		set_tile(8, mid + dy, 1)
+		set_tile(GRID_SIZE - 9, mid + dy, 2)
 	recalculate_scores()
 
 
@@ -66,14 +61,31 @@ func recalculate_scores() -> void:
 	scores[2] = board.count(2)
 
 
-# Apply a validated move: walk tiles, advance turn, emit signals
-func apply_move(origin: Vector2i, direction: Vector2i, player_id: int) -> void:
-	for i in range(1, SHOOT_RANGE + 1):
-		var tx := origin.x + direction.x * i
-		var ty := origin.y + direction.y * i
-		if not is_in_bounds(tx, ty):
+# Returns ordered list of grid tiles the shot will pass through.
+# direction is a normalized Vector2; shoot_range is number of steps.
+func get_trajectory(origin: Vector2i, direction: Vector2, shoot_range: int) -> Array:
+	var tiles: Array = []
+	var seen: Dictionary = {}
+	var origin_center := Vector2(origin.x + 0.5, origin.y + 0.5)
+	var dir_norm := direction.normalized()
+
+	for i in range(1, shoot_range + 1):
+		var pos := origin_center + dir_norm * i
+		var tile := Vector2i(int(pos.x), int(pos.y))
+		if not is_in_bounds(tile.x, tile.y):
 			break
-		set_tile(tx, ty, player_id)
+		var key := tile.x * 10000 + tile.y
+		if not seen.has(key):
+			seen[key] = true
+			tiles.append(tile)
+
+	return tiles
+
+
+func apply_move(origin: Vector2i, direction: Vector2, shoot_range: int, player_id: int) -> void:
+	var trajectory := get_trajectory(origin, direction, shoot_range)
+	for tile: Vector2i in trajectory:
+		set_tile(tile.x, tile.y, player_id)
 
 	recalculate_scores()
 	turn_number += 1
@@ -87,11 +99,10 @@ func apply_move(origin: Vector2i, direction: Vector2i, player_id: int) -> void:
 
 
 func check_game_over() -> int:
-	# Returns winning player id, 0 for tie, -1 if not over
+	# Returns winning player id, 0 for tie, -1 if not over yet
 	if game_over:
 		return _determine_winner()
-	var neutral_count: int = board.count(0)
-	if neutral_count == 0 or turn_number >= MAX_TURNS:
+	if board.count(0) == 0 or turn_number >= MAX_TURNS:
 		game_over = true
 		return _determine_winner()
 	return -1
@@ -103,7 +114,7 @@ func _determine_winner() -> int:
 	elif scores[2] > scores[1]:
 		return 2
 	else:
-		return 0  # tie
+		return 0
 
 
 func serialize_board() -> PackedByteArray:

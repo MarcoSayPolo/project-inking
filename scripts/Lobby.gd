@@ -1,5 +1,6 @@
 extends Control
 
+@onready var local_button: Button = $VBox/LocalButton
 @onready var host_button: Button = $VBox/HostButton
 @onready var ip_input: LineEdit = $VBox/IPInput
 @onready var join_button: Button = $VBox/JoinButton
@@ -7,12 +8,18 @@ extends Control
 
 
 func _ready() -> void:
+	local_button.pressed.connect(_on_local_pressed)
 	host_button.pressed.connect(_on_host_pressed)
 	join_button.pressed.connect(_on_join_pressed)
 	Network.connection_succeeded.connect(_on_connected)
 	Network.connection_failed.connect(_on_connection_failed)
 	Network.player_connected.connect(_on_player_connected)
 	ip_input.placeholder_text = "Enter host IP (e.g. 127.0.0.1)"
+
+
+func _on_local_pressed() -> void:
+	Network.local_player_id = 0
+	get_tree().change_scene_to_file("res://scenes/Game.tscn")
 
 
 func _on_host_pressed() -> void:
